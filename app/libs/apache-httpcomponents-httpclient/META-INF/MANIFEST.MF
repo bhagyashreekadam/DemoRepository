@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Specification-Title: GoogleMaps GWT API
+Implementation-Title: gwt-mapitz-google-maps
+Extension-Name: gwt-user
+Implementation-Version: 1.2.1
+

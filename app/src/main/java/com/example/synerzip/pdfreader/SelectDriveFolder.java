@@ -4,6 +4,11 @@ package com.example.synerzip.pdfreader;
  * Created by synerzip on 27/1/16.
  */
 
+import android.accounts.AccountManager;
+import android.accounts.AccountManagerCallback;
+import android.accounts.AccountManagerFuture;
+import android.accounts.AuthenticatorException;
+import android.accounts.OperationCanceledException;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.IntentSender;
@@ -18,9 +23,24 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.drive.Drive;
 import com.google.android.gms.drive.DriveId;
 import com.google.android.gms.drive.OpenFileActivityBuilder;
+import com.google.api.client.http.FileContent;
+import com.google.api.client.http.HttpRequest;
+import com.google.api.client.http.HttpRequestInitializer;
+import com.google.api.client.http.HttpTransport;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.jackson2.JacksonFactory;
+import com.google.api.services.drive.DriveRequest;
+import com.google.api.services.drive.DriveScopes;
+import com.google.api.services.drive.model.File;
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
 
 import java.io.BufferedInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
@@ -45,7 +65,79 @@ ViewPDF Vpdf=new ViewPDF();
                 + GooglePlayServicesUtil.isGooglePlayServicesAvailable(this));
 
         buildGoogleApiClient();
+        AccountManager am = AccountManager.get(Vpdf.getBaseContext());
 
+        am.getAuthToken(am.getAccounts()[0],
+                "oauth2:" + DriveScopes.DRIVE,
+                new Bundle(),
+                true,
+                new OnTokenAcquired(),
+                null);
+
+    }
+
+
+    private class OnTokenAcquired implements AccountManagerCallback<Bundle> {
+        @Override
+        public void run(AccountManagerFuture<Bundle> result) {
+            try {
+                final String token = result.getResult().getString(AccountManager.KEY_AUTHTOKEN);
+                HttpTransport httpTransport = new NetHttpTransport();
+                JacksonFactory jsonFactory = new JacksonFactory();
+                com.google.api.services.drive.Drive.Builder b = new com.google.api.services.drive.Drive.Builder(httpTransport, jsonFactory, null);
+
+                b.setHttpRequestInitializer(new HttpRequestInitializer() {
+                    @Override
+                    public void initialize(HttpRequest request) throws IOException {
+                        DriveRequest driveRequest = request;
+                        driveRequest.setPrettyPrint(true);
+                        driveRequest.setKey("1038951995911-os1eackdtk7essjodrsl1278ov9gcvvj.apps.googleusercontent.com");
+                        driveRequest.setOauthToken(token);
+                    }
+                });
+
+                final com.google.api.services.drive.Drive drive = b.build();
+
+                final com.google.api.services.drive.model.File body = new com.google.api.services.drive.model.File();
+                body.setTitle("My Test File");
+                body.setDescription("A Test File");
+                body.setMimeType("text/plain");
+
+                final FileContent mediaContent = new FileContent("text/plain", an ordinary java.io.File you'd like to upload. Make it using a FileWriter or something, that's really outside the scope of this answer.)
+                new Thread(new Runnable() {
+                    public void run() {
+                        try {
+                            com.google.api.services.drive.model.File file = drive.files().insert(body, mediaContent).execute();
+                            alreadyTriedAgain = false; // Global boolean to make sure you don't repeatedly try too many times when the server is down or your code is faulty... they'll block requests until the next day if you make 10 bad requests, I found.
+                        } catch (IOException e) {
+                            if (!alreadyTriedAgain) {
+                                alreadyTriedAgain = true;
+                                AccountManager am = AccountManager.get(activity);
+                                am.invalidateAuthToken(am.getAccounts()[0].type, null); // Requires the permissions MANAGE_ACCOUNTS & USE_CREDENTIALS in the Manifest
+                                am.getAuthToken (same as before...)
+                            } else {
+                                // Give up. Crash or log an error or whatever you want.
+                            }
+                        }
+                    }
+                }).start();
+                Intent launch = (Intent)result.getResult().get(AccountManager.KEY_INTENT);
+                if (launch != null) {
+                    startActivityForResult(launch, 3025);
+                    return; // Not sure why... I wrote it here for some reason. Might not actually be necessary.
+                }
+            } catch (OperationCanceledException e) {
+                // Handle it...
+            } catch (AuthenticatorException e) {
+                // Handle it...
+            } catch (IOException e) {
+                // Handle it...
+            } catch (AuthenticatorException e) {
+                e.printStackTrace();
+            } catch (OperationCanceledException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     /*connect client to Google Play Services*/
@@ -168,7 +260,41 @@ ViewPDF Vpdf=new ViewPDF();
                 break;
         }
     }
+    private java.io.File downloadGFileToJFolder(Drive drive, String token, File gFile, java.io.File jFolder) throws IOException {
+        if (gFile.getDownloadUrl() != null && gFile.getDownloadUrl().length() > 0 ) {
+            if (jFolder == null) {
+                jFolder = Environment.getExternalStorageDirectory();
+                jFolder.mkdirs();
+            }
 
+            try {
+
+                HttpClient client = new DefaultHttpClient();
+                HttpGet get = new HttpGet(gFile.getDownloadUrl());
+                get.setHeader("Authorization", "Bearer " + token);
+                HttpResponse response = client.execute(get);
+
+                InputStream inputStream = response.getEntity().getContent();
+                jFolder.mkdirs();
+                java.io.File jFile = new java.io.File(jFolder.getAbsolutePath() + "/" + "temp"); // getGFileName() is my own method... it just grabs originalFilename if it exists or title if it doesn't.
+                FileOutputStream fileStream = new FileOutputStream(jFile);
+                byte buffer[] = new byte[1024];
+                int length;
+                while ((length=inputStream.read(buffer))>0) {
+                    fileStream.write(buffer, 0, length);
+                }
+                fileStream.close();
+                inputStream.close();
+                return jFile;
+            } catch (IOException e) {
+                // Handle IOExceptions here...
+                return null;
+            }
+        } else {
+            // Handle the case where the file on Google Drive has no length here.
+            return null;
+        }
+    }
 
 
     class DownloadFileAsync extends AsyncTask<String, String, String> {
